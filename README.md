@@ -11,7 +11,7 @@ We are basing this off of [a specific linked-in learning tutorial](https://www.l
 
 ## Day 1: Messing with sub-queries and temp-tables
 
-Branch: `day-1`
+> Branch: `day-1`
 
 Get *your* database started with this:
 
@@ -33,4 +33,29 @@ to run this query, feed it into the sql command like so:
 sql < messaround.sql
 ```
 
+You can do a simple sub-query without a join as long as the sub-query only has
+one column, like this:
 
+```
+select Name from country where code2 in (
+  select SubStr(b, 1, 2) from t
+);
+```
+
+But as soon as you have a sub-query with more than one column, you'll need a join (especially if you want to pull data from that sub-query):
+
+```
+SELECT ss.State, ss.SCode, c.Name, c.Region FROM (
+   SELECT SUBSTR(a, 1, 2) as State,
+          SUBSTR(a, 3) as SCode, 
+          SUBSTR(b, 1, 2) as Country,
+          SUBSTR(b, 3) as CCode from t
+) as ss
+JOIN country AS c
+  ON c.code2 = ss.Country;
+```
+
+
+
+
+We added a join
