@@ -77,7 +77,91 @@ What about our certificates table with a couple million rows? Maybe you could li
 
 Cool, I can limit the certificates, why is that different than chaining?
 
+## Day 2: MORE with sub-selects!
 
+> Branch: `day-2`
+
+We want to see album-title, album-artist, track-number and track-title for every track in an album which has at least one track which is < 90s.
+
+### Can we do this without using a sub-query?
+
+Well, at least we can't! IN day-2.sql we saw the video, and we tried to accomplish the same thing through "simpler" sql statements (i.e. not using a sub-select). We couldn't do it! 
+
+Our approach was to do left-outer-join. Note that MySQL can't really do a l-o-j, but it can sort of be simulated with this UNION trick:
+
+```sql
+SELECT * FROM track
+  LEFT JOIN album ON track.album_id = album.id
+  WHERE track.duration < 90
+UNION
+  SELECT * FROM track
+  RIGHT JOIN album ON track.album_id = album.id
+  WHERE track.duration < 90;
+```
+Output:
+
+```
+id	album_id	title	track_number	duration	id	title	artist	label	released
+19	11	Sgt. Pepper's Lonely Hearts Club Band	6	76	11	Hendrix in the West	Jimi Hendrix	Polydor	1972-01-01
+40	13	Sapphire Bullets of Pure Love	4	24	13	Birds of Fire	Mahavishnu Orchestra	Columbia	1973-03-01
+```
+
+Hey, that didn't display every track!
+
+### use sub-queries
+
+Start with a join between the album table and the track table as follows:
+
+```sql
+SELECT *
+  FROM track AS t 
+  JOIN album AS a
+    ON t.album_id = a.id
+;
+```
+
+NEXT, we need a `WHERE` clause to only return the album-information that contain tracks < 90s
+
+```sql
+SELECT *
+  FROM track AS t 
+  JOIN album AS a
+    ON t.album_id = a.id
+    WHERE a.id IN (
+      SELECT DISTINCT album_id from track WHERE duration < 90
+    )
+;
+```
+
+Finally, clean up the data and only show what we care about:
+
+```sql
+SELECT a.title as album, a.artist, t.track_number as seq, t.title AS track_title, t.duration as secs
+  FROM track AS t 
+  JOIN album AS a
+    ON t.album_id = a.id
+    WHERE a.id IN (
+      SELECT DISTINCT album_id from track WHERE duration < 90
+    )
+  ORDER BY a.title
+;
+```
+
+Also, if we run the select inside the join, we get only the tracks that have <
+90s (same as what we did at the beginning with the two joins):
+
+```sql
+SELECT a.title as album, a.artist, t.track_number as seq, t.title AS track_title, t.duration as secs
+  FROM album AS a 
+  JOIN (
+    SELECT DISTINCT album_id, track_number, duration, title
+           FROM track
+           WHERE duration < 90
+  ) as t
+  ON t.album_id = a.id
+  ORDER BY a.title
+;
+```
 
 ### Flash-cards
 
