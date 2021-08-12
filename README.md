@@ -179,6 +179,99 @@ JOIN country AS c
   ON c.code2 = ss.Country;
 ```
 
+## Day 3: Turning your sub-selects into views!
+
+> Branch: `day-3`
+
+First of all, you can do cool math shit in SQL! Check this out:
+
+```sql
+ -- LOOK AT OUR BAD ASS SQL!
+use album;
+SELECT duration, duration / 60 as m, duration MOD 60 as s from track; -- NOTE THAT / gives decimals
+SELECT *, duration DIV 60 as m, duration MOD 60 as s from track; -- DIV does INT()
+```
+ 
+ You can create views! They get stored in the DB as if they were a normal table:
+
+```sql
+ CREATE view trackTime AS
+SELECT *, duration DIV 60 as m, duration MOD 60 as s from track; -- DIV does INT()
+
+mysql> show tables;
++-----------------+
+| Tables_in_album |
++-----------------+
+| album           |
+| track           |
+| tracktime       |
++-----------------+
+3 rows in set (0.00 sec)
+
+mysql> describe tracktime;
++--------------+--------------+------+-----+---------+-------+
+| Field        | Type         | Null | Key | Default | Extra |
++--------------+--------------+------+-----+---------+-------+
+| id           | int          | NO   |     | 0       |       |
+| album_id     | int          | YES  |     | NULL    |       |
+| title        | varchar(255) | YES  |     | NULL    |       |
+| track_number | int          | YES  |     | NULL    |       |
+| duration     | int          | YES  |     | NULL    |       |
+| m            | bigint       | YES  |     | NULL    |       |
+| s            | bigint       | YES  |     | NULL    |       |
++--------------+--------------+------+-----+---------+-------+
+```
+
+> NOTE: This view is not a table, but it shows in the table list above. If you try to make a new one, mysql will get pissy. You have to do a `drop view tracktime` first!
+
+```sql
+mysql> CREATE view trackTime AS
+    -> SELECT album_id, title, duration DIV 60 as m, duration MOD 60 as s from track; -- DIV does INT()
+ERROR 1050 (42S01): Table 'trackTime' already exists
+mysql>
+mysql> drop table trackTime;
+ERROR 1051 (42S02): Unknown table 'album.tracktime'
+mysql> drop view trackTime;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> CREATE view trackTime AS
+    -> SELECT album_id, title, duration DIV 60 as m, duration MOD 60 as s from track; -- DIV does INT()
+Query OK, 0 rows affected (0.01 sec)
+
+mysql>
+mysql> describe trackTime;
++----------+--------------+------+-----+---------+-------+
+| Field    | Type         | Null | Key | Default | Extra |
++----------+--------------+------+-----+---------+-------+
+| album_id | int          | YES  |     | NULL    |       |
+| title    | varchar(255) | YES  |     | NULL    |       |
+| m        | bigint       | YES  |     | NULL    |       |
+| s        | bigint       | YES  |     | NULL    |       |
++----------+--------------+------+-----+---------+-------+
+```
+
+SIDE-BAR: You can do cool string formatting shit like this:
+
+```sql
+SELECT t.title, CONCAT(tt.m, ":", LPAD(tt.s, 2, 0)) AS time
+  FROM TRACK as t
+  JOIN tracktime as tt
+    ON t.id = tt.track_id
+```
+
+What happens if we try to update a view manually?
+
+```sql
+mysql> INSERT INTO tracktime (album_id, track_id, title) VALUES (123, 123343, "FOO");
+ERROR 1471 (HY000): The target table tracktime of the INSERT is not insertable-into
+```
+
+Questions: 
+- is it permanently saved, this view? (YES - you can exit the session and re-enter)
+- what happens if underlying tables are updated? (that shit is updated in real-time, yo)
+- what happens if I make another view with the same name: does it replace it? does it make a new one? (can't do it. drop it first if you don't like it)
+- where is this thing stored? memory? db? how do I get rid of it? (DB. kill it with `drop view`)
+- when is a view better to use than a longer SQL statement? (maybe you have lower-skill SQL users, maybe you don't want to keep typing complex joins, maybe you want different permissions)
 
 
 
