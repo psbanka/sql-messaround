@@ -376,5 +376,44 @@ https://df.secretcdn.net/docs/teams/data_reliability/storage/mysql/best-practice
 
 
 
+## Indexes
+
+1. What is an index?
+
+A tool that allows for faster lookups of data in large data-sets. Typically a Binary-tree structure that has to be stored AS PART of the table. If you drop the table, the index is gonna disappear too.
+
+2. When do you use an index?
+
+- When you have a PRIMARY KEY for a field
+- Columns used for ORDER BY
+- Columns used in WHERE clauses (WHERE col = value; WHERE col > value;)
+
+> DBA Note! When you have columns that are used regularly with a limited amount
+of data (e.g. enums!). Allows you to avoid needing to query each row. Notice 
+
+3. What are the costs/benefits of an index?
+
+- Cost: Increased write time (cuz you have to write the index value also!)
+- Cost: Increased database storage needs.
+- Benefit: decreased search time!
+
+4. How do you make an index?
+
+- when you create a field, if it has a UNIQUE constraint, it will automatically create the index!
+- CREATE INDEX <index-name> on <table-name> ( <column-1>, <column-2> );
+- ALTER TABLE <table-name> ADD INDEX ( <column-1>, <column-2> ); !-- NOTE, this names your index for you!
+
+> NOTE: you can add a UNIQUE index, and if you do, you might not be able to add duplicate data any more!
+
+5. How do you get rid of an index?
+
+- ALTER TABLE <table-name> DROP INDEX <index-name>
+
+6. Can we EDIT an existing index?? 🤔
+
+Looks like all you can do is change the name of an index. Kinda crappy, if you ask me.
+
+- ALTER TABLE <table-name> RENAME INDEX <index-name> TO <new-index-name>;
+
 
 
