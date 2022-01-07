@@ -1,6 +1,7 @@
-We are basing this off of [a specific linked-in learning tutorial](https://www.linkedin.com/learning/advanced-sql-for-query-tuning-and-performance-optimization/reduce-query-reponse-time-with-query-tuning?u=83558730).
+We are basing this off of [this](https://www.linkedin.com/learning/mysql-advanced-topics/creating-an-index?autoAdvance=true&autoSkip=false&autoplay=true&resume=true&u=83558730)
 
-
+Maybe we will also do this one in the future:
+[a specific linked-in learning tutorial](https://www.linkedin.com/learning/advanced-sql-for-query-tuning-and-performance-optimization/reduce-query-reponse-time-with-query-tuning?u=83558730).
 ## General setup notes
 
 1. install mysql on your macbook with `brew install mysql`
@@ -66,8 +67,9 @@ Pulling out a smaller portion of data to then reference in a larger select
 statement. Pulling a couple of different tables together to pull it into its own
 table to query against. 
 
-The internet says: A sub-query is used to return data that will be used in the
-main query as a condition to further restrict the data to be retrieved.
+Pulling out a smaller portion of data to then reference in a larger select
+statement. Pulling a couple of different tables together to pull it into its own
+table to query against. 
 
 from the tutorial: "sub-selects are a convenient way of making your data
 available in different forms while keeping your database schema simple and
@@ -77,7 +79,6 @@ well-organized"
 
 What about our certificates table with a couple million rows? Maybe you could
 limit that?
-
 
 3. How does a sub-select optimize a query?
 
