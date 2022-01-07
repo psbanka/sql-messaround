@@ -49,7 +49,8 @@ SELECT ss.State, ss.SCode, c.Name, c.Region FROM (
    SELECT SUBSTR(a, 1, 2) as State,
           SUBSTR(a, 3) as SCode, 
           SUBSTR(b, 1, 2) as Country,
-          SUBSTR(b, 3) as CCode from t
+          SUBSTR(b, 3) as CCode
+   FROM t
 ) as ss
 JOIN country AS c
   ON c.code2 = ss.Country;
@@ -61,16 +62,21 @@ We added a join
 
 1. What is the purpose of a sub-select
 
-Pulling out a smaller portion of data to then reference in a larger select statement. Pulling a couple of different tables together to pull it into its own table to query against. 
+Pulling out a smaller portion of data to then reference in a larger select
+statement. Pulling a couple of different tables together to pull it into its own
+table to query against. 
 
-The internet says: A subquery is used to return data that will be used in the main query as a condition to further restrict the data to be retrieved.
+The internet says: A sub-query is used to return data that will be used in the
+main query as a condition to further restrict the data to be retrieved.
 
+from the tutorial: "sub-selects are a convenient way of making your data
+available in different forms while keeping your database schema simple and
+well-organized"
 
-from the tutorial: "sub-selects are a convenient way of making your data available in different forms while keeping your database schema simple and well-organized"
+2. When is a sub-select particularly useful
 
-2. When is a subselect particularly useful
-
-What about our certificates table with a couple million rows? Maybe you could limit that?
+What about our certificates table with a couple million rows? Maybe you could
+limit that?
 
 
 3. How does a sub-select optimize a query?
@@ -81,13 +87,17 @@ Cool, I can limit the certificates, why is that different than chaining?
 
 > Branch: `day-2`
 
-We want to see album-title, album-artist, track-number and track-title for every track in an album which has at least one track which is < 90s.
+We want to see album-title, album-artist, track-number and track-title for every
+track in an album which has at least one track which is < 90s.
 
 ### Can we do this without using a sub-query?
 
-Well, at least we can't! IN day-2.sql we saw the video, and we tried to accomplish the same thing through "simpler" sql statements (i.e. not using a sub-select). We couldn't do it! 
+Well, at least *we* can't! IN `day-2.sql` we saw the video, and we tried to
+accomplish the same thing through "simpler" sql statements (i.e. not using a
+sub-select). We couldn't do it! 
 
-Our approach was to do left-outer-join. Note that MySQL can't really do a l-o-j, but it can sort of be simulated with this UNION trick:
+Our approach was to do left-outer-join. Note that MySQL can't really do a l-o-j,
+but it can sort of be simulated with this UNION trick:
 
 ```sql
 SELECT * FROM track
@@ -120,7 +130,8 @@ SELECT *
 ;
 ```
 
-NEXT, we need a `WHERE` clause to only return the album-information that contain tracks < 90s
+NEXT, we need a `WHERE` clause to only return the album-information that contain
+tracks < 90s
 
 ```sql
 SELECT *
@@ -143,7 +154,7 @@ SELECT a.title as album, a.artist, t.track_number as seq, t.title AS track_title
     WHERE a.id IN (
       SELECT DISTINCT album_id from track WHERE duration < 90
     )
-  ORDER BY a.title
+  ORDER BY album
 ;
 ```
 
@@ -222,7 +233,9 @@ mysql> describe tracktime;
 +--------------+--------------+------+-----+---------+-------+
 ```
 
-> NOTE: This view is not a table, but it shows in the table list above. If you try to make a new one, mysql will get pissy. You have to do a `drop view tracktime` first!
+> NOTE: This view is not a table, but it shows in the table list above. If you
+try to make a new one, mysql will get pissy. You have to do a `drop view
+tracktime` first!
 
 ```sql
 mysql> CREATE view trackTime AS
@@ -250,7 +263,7 @@ mysql> describe trackTime;
 +----------+--------------+------+-----+---------+-------+
 ```
 
-SIDE-BAR: You can do cool string formatting shit like this:
+> SIDE-BAR: You can do cool string formatting shit like this:
 
 ```sql
 SELECT t.title, CONCAT(tt.m, ":", LPAD(tt.s, 2, 0)) AS time
@@ -266,12 +279,100 @@ mysql> INSERT INTO tracktime (album_id, track_id, title) VALUES (123, 123343, "F
 ERROR 1471 (HY000): The target table tracktime of the INSERT is not insertable-into
 ```
 
-Questions: 
-- is it permanently saved, this view? (YES - you can exit the session and re-enter)
-- what happens if underlying tables are updated? (that shit is updated in real-time, yo)
-- what happens if I make another view with the same name: does it replace it? does it make a new one? (can't do it. drop it first if you don't like it)
-- where is this thing stored? memory? db? how do I get rid of it? (DB. kill it with `drop view`)
-- when is a view better to use than a longer SQL statement? (maybe you have lower-skill SQL users, maybe you don't want to keep typing complex joins, maybe you want different permissions)
+Q & A: 
+- is it permanently saved, this view?
+
+  YES - you can exit the session and re-enter
+
+- what happens if underlying tables are updated?
+
+  that shit is updated in real-time, yo
+
+- what happens if I make another view with the same name: does it replace it? does it make a new one?
+
+  can't do it. drop it first if you don't like it
+
+- where is this thing stored? memory? db? how do I get rid of it?
+
+  DB. kill it with `drop view`
+
+- when is a view better to use than a longer SQL statement?
+
+  maybe you have lower-skill SQL users, maybe you don't want to keep typing
+  complex joins, maybe you want different permissions
+  
+  
+## Indexes
+
+> Branch: `1-indexes`
+
+1. What is an index?
+
+A tool that allows for faster lookups of data in large data-sets. Typically a
+Binary-tree structure that has to be stored AS PART of the table. If you drop
+the table, the index is gonna disappear too.
+
+2. When do you use an index?
+
+- When you have a PRIMARY KEY for a field
+- Columns used for ORDER BY
+- Columns used in WHERE clauses (WHERE col = value; WHERE col > value;)
+
+> DBA Note! When you have columns that are used regularly with a limited amount
+of data (e.g. enums!). Allows you to avoid needing to query each row.
+
+3. What are the costs/benefits of an index?
+
+- Cost: Increased write time (cuz you have to write the index value also!)
+- Cost: Increased database storage needs.
+- Benefit: decreased search time!
+
+4. How do you make an index?
+
+- when you create a field, if it has a UNIQUE constraint, it will automatically create the index!
+- CREATE INDEX <index-name> on <table-name> ( <column-1>, <column-2> );
+- ALTER TABLE <table-name> ADD INDEX ( <column-1>, <column-2> ); !-- NOTE, this names your index for you!
+
+> NOTE: you can add a UNIQUE index, and if you do, you might not be able to add
+duplicate data any more!
+
+5. How do you get rid of an index?
+
+- ALTER TABLE <table-name> DROP INDEX <index-name>
+
+6. Can we EDIT an existing index?? 🤔
+
+Looks like all you can do is change the name of an index. Kinda crappy, if you
+ask me.
+
+- ALTER TABLE <table-name> RENAME INDEX <index-name> TO <new-index-name>;
+
+7. Can you index on multiple columns?
+
+Yes, but an index on `customer_id`, `source`, `created_at` can be used for `customer_id`
+alone, but it cannot be used for `source` or `created_at` alone.
+
+This reduces write-time, because it uses uses one "index-entry" for the combined index. (Squee to confirm?)
+
+https://df.secretcdn.net/docs/teams/data_reliability/storage/mysql/best-practices/#indexing-strategies-more-power-more-speeeeeed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
