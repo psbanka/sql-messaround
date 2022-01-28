@@ -397,7 +397,11 @@ of data (e.g. enums!). Allows you to avoid needing to query each row. Notice
 - Cost: Increased database storage needs.
 - Benefit: decreased search time!
 
-4. How do you make an index?
+### Making Indexes
+
+> Branch: `2-indexes`
+
+1. How do you make an index?
 
 - when you create a field, if it has a UNIQUE constraint, it will automatically create the index!
 - CREATE INDEX <index-name> on <table-name> ( <column-1>, <column-2> );
@@ -405,15 +409,235 @@ of data (e.g. enums!). Allows you to avoid needing to query each row. Notice
 
 > NOTE: you can add a UNIQUE index, and if you do, you might not be able to add duplicate data any more!
 
-5. How do you get rid of an index?
+2. How do you get rid of an index?
 
 - ALTER TABLE <table-name> DROP INDEX <index-name>
 
-6. Can we EDIT an existing index?? 🤔
+3. Can we EDIT an existing index?? 🤔
 
 Looks like all you can do is change the name of an index. Kinda crappy, if you ask me.
 
 - ALTER TABLE <table-name> RENAME INDEX <index-name> TO <new-index-name>;
 
+4. Can you index twice on the same column?
+
+One can create an index in any way your imagination will lead you. But we have discovered at least five ways:
+
+1. set the primary key (e.g.
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY
+);
+```
+
+OUTPUT
+```
+SHOW INDEX FROM TEST;
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table | Non_unique | Key_name | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| test  |          0 | PRIMARY  |            1 | id          | A         |           0 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+```
+
+2. Add the `UNIQUE` constraint to a column:
+```sql
+USE scratch;
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (
+  string1 VARCHAR(128) UNIQUE
+);
+```
+
+```
+mysql> SHOW INDEX FROM TEST;
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table | Non_unique | Key_name | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| test  |          0 | string1  |            1 | string1     | A         |           0 |     NULL |   NULL | YES  | BTREE      |         |               | YES     | NULL       |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+```
+
+3. use the SQL command `INDEX`  or (`UNIQUE INDEX`) as part of the `CREATE TABLE` command
+```sql
+USE scratch;
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (
+  string1 VARCHAR(128),
+  INDEX i_str2 (string1)
+);
+```
+
+```
+SHOW INDEX FROM TEST;
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table | Non_unique | Key_name | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| test  |          1 | i_str2   |            1 | string1     | A         |           0 |     NULL |   NULL | YES  | BTREE      |         |               | YES     | NULL       |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+```
+
+4. alter table...
+```sql
+ALTER TABLE TEST ADD INDEX `i_str3` (string1);
+```
+
+5. `CREATE INDEX`:
+
+```sql
+CREATE INDEX i_str4 ON test(string1);
+```
+
+### QUESTIONS:
+
+Can you add two indexes on the same row? 
+- you bet your ass. SQL don't care.
+
+Exercise maybe?
 
 
+- create a multi-megabyte table in mysql using faker data
+- or download a [big public data-set](https://learnsql.com/blog/free-online-datasets-to-practice-sql/)
+- and fiddle around with indexes and see how that impacts both read and write performance on a local mysql instance?
+
+
+Importing some data from [here](https://data.cdc.gov/api/views/kh8y-3es6/rows.csv?accessType=DOWNLOAD):
+
+1. create the database and table
+
+```sql
+CREATE DATABASE IF NOT EXISTS hhs;
+DROP TABLE relief_fund;
+CREATE TABLE IF NOT EXISTS relief_fund (
+  provider_name VARCHAR(100),
+  state VARCHAR(2),
+  city VARCHAR(50),
+  payment VARCHAR(20)
+);
+```
+
+1.5. restart the server with the right flags:
+```
+mysqld --secure-file-priv=`pwd`
+```
+
+2. Import stuff:
+
+```sql
+USE hhs
+LOAD DATA INFILE '/Users/peba/play/sql-messaround/HHS_Provider_Relief_Fund.csv'
+  INTO TABLE relief_fund 
+  FIELDS TERMINATED BY ',' 
+  ENCLOSED BY '"'
+  LINES TERMINATED BY '\n'
+  IGNORE 1 ROWS
+;
+```
+
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+
+** NOTE** - we want to add an ID row, we want to transform the payment string into an float.
+then we want to time queries with/wo indices
+
+TODO: 
+- add the ID field
+- backfill the data
+- set it to the primary key
+
+```sql
+ALTER TABLE relief_fund ADD COLUMN id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT FIRST;
+```
+
+
+- change payment field to an int instead of a string
+
+1. ADD ID field:
+
+ALTER TABLE relief_fund ADD COLUMN id INT UNSIGNED FIRST ;
+
+
+```sql
+UPDATE relief_fund 
+    SET _payment = (SELECT payment 
+                 FROM relief_fund
+                 WHERE relief_fund.id = relief_fund.id 
+                 LIMIT 1);
+
+!-- WHERE relief_fund._payment IS NULL; 
+```
+
+```sql
+UPDATE relief_fund SET _payment = CAST(SUBSTR(payment, 1, -1) AS DECIMAL(65,2));
+```
+   SELECT SUBSTR(a, 1, 2) as State,
+
+ANOTHER TRY:
+```sql
+SELECT ID, CAST(REPLACE(REPLACE(payment,',',''),'$','') AS DECIMAL(65,2)) as _payment
+FROM relief_fund LIMIT 10;
+!-- WHERE CAST(REPLACE(REPLACE(IFNULL(Amount,0),',',''),'$','') AS DECIMAL(10,2)) > 0
+```
+
+UPDATE table 
+    SET value = (SELECT value 
+                 FROM Table AS T1 
+                 WHERE T1.ID = table.ID 
+                     and t1.DATE <= table.Date 
+                 LIMIT 1)
+WHERE table.Value IS NULL; 
+
+```sql
+UPDATE relief_fund SET _payment = (
+  SELECT _payment (
+    SELECT id, CAST(REPLACE(REPLACE(payment,',',''),'$','') AS DECIMAL(65,2)) as _payment
+    FROM relief_fund AS my_table
+    WHERE my_table.id = relief_fund.id
+  ) 
+);
+```
+
+```sql
+UPDATE relief_fund SET _payment = (
+  SELECT _payment from (
+    SELECT ID, CAST(REPLACE(REPLACE(payment,',',''),'$','') AS DECIMAL(65,2)) as _payment
+    FROM relief_fund AS table_x
+    WHERE table_x.id = relief_fund.id
+  ) as my_table
+);
+```
+
+Query OK, 414199 rows affected (27.90 sec)
+Rows matched: 414199  Changed: 414199  Warnings: 0
+
+```sql
+
+mysql> ALTER TABLE relief_fund DROP COLUMN payment;
+Query OK, 0 rows affected (1.21 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+mysql> select * from relief_fund LIMIT 10;
++----+------------------------------------------------+-------+--------------+----------+
+| id | provider_name                                  | state | city         | _payment |
++----+------------------------------------------------+-------+--------------+----------+
+|  1 | BRANDON ASTIN DMD LLC                          | AK    | ANCHOR POINT |   113026 |
+|  2 | ELIZABETH WATNEY                               | AK    | ANCHOR POINT |      724 |
+|  3 | A HAND UP BEHAVIOR SERVICES                    | AK    | ANCHORAGE    |     1191 |
+|  4 | ETHOS HEALTH MARYLAND 2                        | MD    | OWINGS MILLS |    26098 |
+|  5 | SCOCCIA MEDICAL SERVICES PLLC                  | TX    | KERRVILLE    |      289 |
+|  6 | A JOINT EFFORT PHYSICAL THERAPY                | AK    | ANCHORAGE    |    23361 |
+|  7 | EYE 4 KIDS VISION CENTER                       | MD    | OWINGS MILLS |    18866 |
+|  8 | AA PAIN CLINIC, INC.                           | AK    | ANCHORAGE    |    69976 |
+|  9 | FALL PREVENTION STROKE REHAB LLC               | MD    | OWINGS MILLS |   128247 |
+| 10 | FAMILY FOOTCARE AMBULATORY SURGERY CENTER, LLC | MD    | OWINGS MILLS |     4662 |
++----+------------------------------------------------+-------+--------------+----------+
+10 rows in set (0.00 sec)
+
+mysql> ALTER TABLE relief_fund RENAME COLUMN _payment payment;
+ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'payment' at line 1
+mysql> ALTER TABLE relief_fund RENAME COLUMN _payment TO payment;
+Query OK, 0 rows affected (0.01 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+```
