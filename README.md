@@ -2,6 +2,7 @@ We are basing this off of [this](https://www.linkedin.com/learning/mysql-advance
 
 Maybe we will also do this one in the future:
 [a specific linked-in learning tutorial](https://www.linkedin.com/learning/advanced-sql-for-query-tuning-and-performance-optimization/reduce-query-reponse-time-with-query-tuning?u=83558730).
+
 ## General setup notes
 
 1. install mysql on your macbook with `brew install mysql`
@@ -357,25 +358,6 @@ This reduces write-time, because it uses uses one "index-entry" for the combined
 
 https://df.secretcdn.net/docs/teams/data_reliability/storage/mysql/best-practices/#indexing-strategies-more-power-more-speeeeeed
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## Indexes
 
 1. What is an index?
@@ -497,7 +479,7 @@ Can you add two indexes on the same row?
 - you bet your ass. SQL don't care.
 
 
-EXPERIMENT!
+### EXPERIMENT!
 
 [Index messaround](./index-messaround.md) 
   - imports a big file from csv
@@ -505,4 +487,70 @@ EXPERIMENT!
   - plays around with index-query speeds
 
 
+## SHOWING INDEXES
 
+- Hey, did you know that there is a special database in mysql that has lots of interesting things?
+- it looks like you could *really hose* your whole system by messing around with it!
+- it's called `information_schema`
+```
+mysql> use information_schema;
+```
+- among other things, it stores index information 
+```
+mysql> select distinct TABLE_NAME, INDEX_NAME from information_schema.statistics limit 10;
++-----------------------------------------+------------+
+| TABLE_NAME                              | INDEX_NAME |
++-----------------------------------------+------------+
+| innodb_table_stats                      | PRIMARY    |
+| innodb_index_stats                      | PRIMARY    |
+| users                                   | PRIMARY    |
+| City                                    | PRIMARY    |
+| Country                                 | PRIMARY    |
+| CountryLanguage                         | PRIMARY    |
+| track                                   | PRIMARY    |
+| emails                                  | PRIMARY    |
+| replication_group_configuration_version | PRIMARY    |
+| album                                   | PRIMARY    |
++-----------------------------------------+------------+
+10 rows in set (0.02 sec)
+```
+
+
+or, from a particular database:
+```
+mysql> select distinct TABLE_NAME, INDEX_NAME from information_schema.statistics where table_schema = 'hhs';
++-------------+-------------+
+| TABLE_NAME  | INDEX_NAME  |
++-------------+-------------+
+| relief_fund | idx_on_city |
+| relief_fund | PRIMARY     |
++-------------+-------------+
+2 rows in set (0.01 sec)
+```
+
+## Dropping indexes
+
+This is just running the `drop index` command as follows:
+
+```sql
+mysql> show indexes in relief_fund;
++-------------+------------+-------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table       | Non_unique | Key_name    | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------------+------------+-------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| relief_fund |          0 | PRIMARY     |            1 | id          | A         |      412128 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| relief_fund |          1 | idx_on_city |            1 | city        | A         |       14363 |     NULL |   NULL | YES  | BTREE      |         |               | YES     | NULL       |
++-------------+------------+-------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+2 rows in set (0.03 sec)
+
+mysql> drop index idx_on_city on relief_fund;
+Query OK, 0 rows affected (0.09 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+mysql> show indexes in relief_fund;
++-------------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table       | Non_unique | Key_name | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| relief_fund |          0 | PRIMARY  |            1 | id          | A         |      412128 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
++-------------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+1 row in set (0.00 sec)
+```
