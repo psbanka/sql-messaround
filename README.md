@@ -554,3 +554,196 @@ mysql> show indexes in relief_fund;
 +-------------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
 1 row in set (0.00 sec)
 ```
+
+## Multi-column indexes
+
+Questions:
+
+- can you dump an index raw to the console?
+
+- when I do a query, how do know what indexes get used? (Answered below)
+
+- RELATING TO THE VIDEO ITSELF: what's up with this example? we don't really
+need an index in order to do an ORDER BY, right? Why was he relating that the
+index had anything to do with the output when it was clearly the ORDER BY that
+had to do with the output? Can you remove the ORDER BY and it still does it in
+that order because of something to do with the indexing?
+
+example:
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  string1 VARCHAR(128),
+  string2 VARCHAR(128),
+  INDEX twostrs (string1,string2)
+);
+
+INSERT INTO test (string1, string2) VALUES ('foo', 'bar'), ('this', 'that'), ('another', 'row'), ('foo', 'alpha');
+SELECT string1, string2 FROM test ORDER BY string1, string2;
+
+SHOW INDEX FROM test;
+```
+
+Check this out:
+
+```sql
+mysql> SELECT string1, string2 FROM test ORDER BY string1, string2;
++---------+---------+
+| string1 | string2 |
++---------+---------+
+| another | row     |
+| foo     | alpha   |
+| foo     | bar     |
+| this    | that    |
++---------+---------+
+4 rows in set (0.00 sec)
+
+mysql> SELECT string1, string2 FROM test;
++---------+---------+
+| string1 | string2 |
++---------+---------+
+| another | row     |
+| foo     | alpha   |
+| foo     | bar     |
+| this    | that    |
++---------+---------+
+4 rows in set (0.00 sec)
+
+mysql> show indexes in test;
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table | Non_unique | Key_name | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| test  |          0 | PRIMARY  |            1 | id          | A         |           4 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| test  |          1 | twostrs  |            1 | string1     | A         |           3 |     NULL |   NULL | YES  | BTREE      |         |               | YES     | NULL       |
+| test  |          1 | twostrs  |            2 | string2     | A         |           4 |     NULL |   NULL | YES  | BTREE      |         |               | YES     | NULL       |
++-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+3 rows in set (0.01 sec)
+
+mysql> drop index twostrs on test;
+Query OK, 0 rows affected (0.01 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+mysql> SELECT string1, string2 FROM test;
++---------+---------+
+| string1 | string2 |
++---------+---------+
+| foo     | bar     |
+| this    | that    |
+| another | row     |
+| foo     | alpha   |
++---------+---------+
+4 rows in set (0.00 sec)
+```
+
+ANSWER:
+- order-by was not necessary. when the index existed, the output was ordered for us. when the index was removed, the ordering went away.
+
+- NOTE that indexes are applied sequentially. if you have a two-column index and you search for things on the first column, the index will be used.
+
+- ALSO, if you have a single-column index and you do a two-column select, that index will NOT be used.
+
+
+Look at this. We have an index on ONLY string1 and we do a query for string1, string2:
+
+```sql
+mysql> SELECT string1, string2 FROM test;
++---------+---------+
+| string1 | string2 |
++---------+---------+
+| foo     | bar     |
+| this    | that    |
+| another | row     |
+| foo     | alpha   |
++---------+---------+
+4 rows in set (0.00 sec)
+```
+
+NOT sorted.
+
+Then we do a query for *ONLY* string1:
+
+```sql
+
+mysql> SELECT string1 FROM test;
++---------+
+| string1 |
++---------+
+| another |
+| foo     |
+| foo     |
+| this    |
++---------+
+4 rows in set (0.00 sec)
+```
+
+SORTED. This indicates that the index for string1 was *not* used for the query
+for string1,string2. It was only used for the single-column query.
+
+Now, re-create the two-column index:
+```sql
+mysql> drop index one_str on test;
+Query OK, 0 rows affected (0.00 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+mysql> create index twostr ON test(string1,string2);
+Query OK, 0 rows affected (0.01 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+```
+
+When we select `string1` from test by itself without also selecting string1, it's still alphabetized.
+
+```
+mysql> select string1,string2 from test;
++---------+---------+
+| string1 | string2 |
++---------+---------+
+| another | row     |
+| foo     | alpha   |
+| foo     | bar     |
+| this    | that    |
++---------+---------+
+4 rows in set (0.00 sec)
+
+mysql> select string1 from test;
++---------+
+| string1 |
++---------+
+| another |
+| foo     |
+| foo     |
+| this    |
++---------+
+4 rows in set (0.00 sec)
+```
+
+CHECK THIS OUT: if you have an index string1,string2 and only query for string2, you get the order that was imposed by sorting string1 first from the index.
+
+```sql
+mysql> select string2 from test;
++---------+
+| string2 |
++---------+
+| row     |
+| alpha   |
+| bar     |
+| that    |
++---------+
+4 rows in set (0.00 sec)
+```
+
+ALSO! HOT TIP! You can see exactly what mysql is up to by putting `EXPLAIN` in front of any query. It will tell you what indexes were applied in your query:
+
+```sql
+mysql> explain select string2 from test;
++----+-------------+-------+------------+-------+---------------+--------+---------+------+------+----------+-------------+
+| id | select_type | table | partitions | type  | possible_keys | key    | key_len | ref  | rows | filtered | Extra       |
++----+-------------+-------+------------+-------+---------------+--------+---------+------+------+----------+-------------+
+|  1 | SIMPLE      | test  | NULL       | index | NULL          | twostr | 1030    | NULL |    4 |   100.00 | Using index |
++----+-------------+-------+------------+-------+---------------+--------+---------+------+------+----------+-------------+
+1 row in set, 1 warning (0.00 sec)
+```
+
+
