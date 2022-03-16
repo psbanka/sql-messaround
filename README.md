@@ -746,4 +746,111 @@ mysql> explain select string2 from test;
 1 row in set, 1 warning (0.00 sec)
 ```
 
+# Stored Routines
+
+```sql
+USE album;
+DROP FUNCTION IF EXISTS testfunc;
+DELIMITER //
+CREATE FUNCTION testfunc(s VARCHAR(255))
+RETURNS VARCHAR(255)
+NO SQL
+  BEGIN
+    RETURN CONCAT("Hello, ", s, "!");
+  END //
+DELIMITER ;
+```
+
+this works:
+```sql
+USE album;
+DROP FUNCTION IF EXISTS track_len;
+
+DELIMITER //
+CREATE FUNCTION track_len(seconds INT)
+RETURNS VARCHAR(16)
+DETERMINISTIC
+BEGIN
+    RETURN CONCAT_WS(':', seconds DIV 60, LPAD(seconds MOD 60, 2, '0' ));
+END //
+DELIMITER ;
+```
+
+## Questions
+
+- What's the difference between a function and a **procedure**?
+
+It would seem that a procedure return "table" instead of a scalar value, but we
+haven't really played with procedures yet.
+
+- In the case of a select statement return, is it executing the SQL or is
+it just return the select statement for further modification?
+
+- why would you use a function over a view?
+
+It would seem that a function can be a bit more flexible insofar as you don't
+have to link it to a particular query. And you can apply say, data transforms
+ad-hoc using the function whenever you want. e.g. converting seconds to "MM:SS"
+format.
+
+Cleaner to call `trac_len()` in the query than to mash all that SQL in your
+query directly.
+
+- would like to have more info on the difference between DETERMINISTIC, NO SQL, READS SQL DATA, etc
+
+?
+
+- Is there new programming syntax for this stuff? Where do we find that documentation?
+
+?
+
+- How does a WHILE loop work in a FUNCTION context?
+
+```sql
+USE album;
+DROP FUNCTION IF EXISTS foo;
+
+DELIMITER //
+CREATE FUNCTION foo(seconds INT)
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+  DECLARE max_value INT UNSIGNED DEFAULT seconds;
+  DECLARE int_value INT UNSIGNED DEFAULT 0;
+  DECLARE str_value VARCHAR(255) DEFAULT '';
+  WHILE int_value < max_value DO
+    SET int_value = int_value + 1;
+  END WHILE;
+  RETURN int_value;
+END //
+DELIMITER ;
+```
+
+- What exactly does mysql do with all this return and function type declaration business?
+
+It seems like it just casts shit for you.
+
+mysql MAKES YOU tell it what the type of the return value is, but it
+seems like it doesn't really care, or maybe it just casts it for you without
+telling you, which is totally rude and very JavaScript if you ask me.
+
+Look at this stupid shit!:
+
+```sql
+mysql> select foo("66");
++-----------+
+| foo("66") |
++-----------+
+| 66        |
++-----------+
+```
+
+
+
+
+
+
+
+
+
 
