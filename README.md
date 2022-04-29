@@ -845,12 +845,122 @@ mysql> select foo("66");
 +-----------+
 ```
 
+# Stored procedures
+
+Hey, did you know you can duplicate a table like this?
+
+```sql
+mysql> create table new_album select * from album;
+```
+
+That just copies both the table definition and all the table data from one table to another!
+
+You can also swap two tables like this:
+
+```
+mysql> create table new_album select * from album;
+mysql> select *  from new_album where id=20;
++----+-------+--------------+---------+----------+
+| id | title | artist       | label   | released |
++----+-------+--------------+---------+----------+
+| 20 | test1 | Jimi Hendrix | Homeboy | NULL     |
++----+-------+--------------+---------+----------+
+1 row in set (0.00 sec)
+
+mysql> DELETE  from new_album where id=20;
+Query OK, 1 row affected (0.01 sec)
+
+mysql> select * from new_album;
++----+------------------------+-----------------------------------+------------+------------+
+| id | title                  | artist                            | label      | released   |
++----+------------------------+-----------------------------------+------------+------------+
+|  1 | Two Men with the Blues | Willie Nelson and Wynton Marsalis | Blue Note  | 2008-07-08 |
+| 11 | Hendrix in the West    | Jimi Hendrix                      | Polydor    | 1972-01-01 |
+| 12 | Rubber Soul            | The Beatles                       | Parlophone | 1965-12-03 |
+| 13 | Birds of Fire          | Mahavishnu Orchestra              | Columbia   | 1973-03-01 |
+| 16 | Live And               | Johnny Winter                     | Columbia   | 1971-05-01 |
+| 17 | Apostrophe             | Frank Zappa                       | DiscReet   | 1974-04-22 |
+| 18 | Kind of Blue           | Miles Davis                       | Columbia   | 1959-08-17 |
++----+------------------------+-----------------------------------+------------+------------+
+7 rows in set (0.00 sec)
+
+mysql> select * from album;
++----+------------------------+-----------------------------------+------------+------------+
+| id | title                  | artist                            | label      | released   |
++----+------------------------+-----------------------------------+------------+------------+
+|  1 | Two Men with the Blues | Willie Nelson and Wynton Marsalis | Blue Note  | 2008-07-08 |
+| 11 | Hendrix in the West    | Jimi Hendrix                      | Polydor    | 1972-01-01 |
+| 12 | Rubber Soul            | The Beatles                       | Parlophone | 1965-12-03 |
+| 13 | Birds of Fire          | Mahavishnu Orchestra              | Columbia   | 1973-03-01 |
+| 16 | Live And               | Johnny Winter                     | Columbia   | 1971-05-01 |
+| 17 | Apostrophe             | Frank Zappa                       | DiscReet   | 1974-04-22 |
+| 18 | Kind of Blue           | Miles Davis                       | Columbia   | 1959-08-17 |
+| 20 | test1                  | Jimi Hendrix                      | Homeboy    | NULL       |
++----+------------------------+-----------------------------------+------------+------------+
+8 rows in set (0.00 sec)
+
+mysql> RENAME TABLE album to album_old, new_album to album;
+Query OK, 0 rows affected (0.02 sec)
+```
+
+And now `album` does not have id `20`
 
 
+Stored procedures are used in the "statement" context and stored functions are used in the "expression" context. Bill Weinman thinks this is in an important distiction.
 
 
+# MORE with stored procedures
 
+Q: 6s into the video on language extensions, we see:
 
+```sql
 
+DELIMITER //
+CREATE PROCEDURE str_count()
+BEGIN
+  DECLARE max_value INT UNSIGNED DEFAULT 5;
+  DECLARE int_value INT UNSIGNED DEFAULT 0;
+  DECLARE str_value VARCHAR(255) DEFAULT '';
+  
+  WHILE int_value < max_value DO
+    SET int_value = int_value + 1;
+    SET str_value = CONCAT(str_value, int_value, ' ');
+  END WHILE;
+  SELECT str_value;
+END //
+DELIMITER ;
+
+CALL str_count();
+
+DROP PROCEDURE IF EXISTS str_count;
+```
+
+SO what's the deal with Stored procedures? Why is this not a function? What indeed is the fucking difference?
+
+```sql
+DROP FUNCTION IF EXISTS str_count;
+
+DELIMITER //
+CREATE FUNCTION str_count()
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+  DECLARE max_value INT UNSIGNED DEFAULT 5;
+  DECLARE int_value INT UNSIGNED DEFAULT 0;
+  DECLARE str_value VARCHAR(255) DEFAULT '';
+  
+  WHILE int_value < max_value DO
+    SET int_value = int_value + 1;
+    SET str_value = CONCAT(str_value, int_value, ' ');
+  END WHILE;
+  RETURN str_value;
+END //
+DELIMITER ;
+```
+
+A: This is annoying. It looks like functions have to `RETURN`, but Stored
+Procedures have to end in a `SELECT`. Also, functions have `DETERMINISTIC`. But,
+as you can see from the above examples, you can do pretty-much the same kinda
+shit in both things. Not sure why it's helpful to distinguish them.
 
 
