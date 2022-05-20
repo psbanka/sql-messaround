@@ -1,5 +1,7 @@
 We are basing this off of [this](https://www.linkedin.com/learning/mysql-advanced-topics/creating-an-index?autoAdvance=true&autoSkip=false&autoplay=true&resume=true&u=83558730)
 
+BTW: there is [SQL fiddle!](http://sqlfiddle.com/#!2/8ea00/1)
+
 Maybe we will also do this one in the future:
 [a specific linked-in learning tutorial](https://www.linkedin.com/learning/advanced-sql-for-query-tuning-and-performance-optimization/reduce-query-reponse-time-with-query-tuning?u=83558730).
 
@@ -963,4 +965,375 @@ Procedures have to end in a `SELECT`. Also, functions have `DETERMINISTIC`. But,
 as you can see from the above examples, you can do pretty-much the same kinda
 shit in both things. Not sure why it's helpful to distinguish them.
 
+
+# Transactions
+
+Transactions allow you to keep a DB in sync by "storing" a db state, making changes, and -- if one of them fails, going back to stored DB state.
+
+What happens if someone else tries writing to the same row that you're modifying when you're doing a transaction? What happens in a race-condition?
+
+1. Here's a thing which should fail inside a transaction. What happens?
+
+Setup:
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS widgetInventory;
+DROP TABLE IF EXISTS widgetSales;
+
+CREATE TABLE widgetInventory (
+  id INTEGER AUTO_INCREMENT PRIMARY KEY,
+  description TEXT,
+  onhand INTEGER NOT NULL
+);
+
+CREATE TABLE widgetSales (
+  id INTEGER AUTO_INCREMENT PRIMARY KEY,
+  inv_id INTEGER,
+  quan INTEGER,
+  price INTEGER
+);
+
+INSERT INTO widgetInventory ( description, onhand ) VALUES ( 'rock', 25 );
+INSERT INTO widgetInventory ( description, onhand ) VALUES ( 'paper', 25 );
+INSERT INTO widgetInventory ( description, onhand ) VALUES ( 'scissors', 25 );
+
+SELECT * FROM widgetInventory;
+```
+
+1a. Something that WORKS:
+
+```sql
+START TRANSACTION;
+INSERT INTO widgetSales ( inv_id, quan, price ) VALUES ( 1, 5, 500 );
+UPDATE widgetInventory SET onhand = ( onhand - 5 ) WHERE id = 1;
+COMMIT;
+```
+
+1b. Something that BREAKS:
+
+```sql
+START TRANSACTION;
+INSERT INTO widgetSales ( inv_id, quan, price ) VALUES ( 5, 5, 500 );
+UPDATE widgetInventory SET onhand = ( onhand - 5 ) WHERE id = 5;
+COMMIT;
+```
+
+NOTE that this *actually doesn't break* and the transaction goes through because
+`WHERE id = 5` just gives you zero rows affected. SO we end up getting a sales
+entry for something that doesn't exist:
+
+Here's the state of our DB after our bad thing:
+
+```
+mysql> select * from widgetInventory;
++----+-------------+--------+
+| id | description | onhand |
++----+-------------+--------+
+|  1 | rock        |     20 | <- still have ROCKS!
+|  2 | paper       |     25 |
+|  3 | scissors    |     25 |
++----+-------------+--------+
+3 rows in set (0.00 sec)
+
+mysql> select * from widgetSales;
++----+--------+------+-------+
+| id | inv_id | quan | price |
++----+--------+------+-------+
+|  1 |      1 |    5 |   500 |
+|  2 |      5 |    5 |   500 | <- Sold a thing that doesn't exist!
++----+--------+------+-------+
+2 rows in set (0.00 sec)
+```
+
+1c. Q: What kinds of errors does SQL notice by itself?
+
+okay, so there's a thing called `ROLLBACK` that you can call instead of
+`COMMIT`, but that requires you to manually notice somehow that things didn't go
+the way you wanted them to. Does SQL notice sometimes on its own? AND, if you're
+getting thousands-of-requests-per-small-time-unit, then you can't just do that!
+
+```sql
+START TRANSACTION;
+INSERT INTO widgetSales ( inv_id, quan, price ) VALUES ( 5, 5, 500 );
+UPDATE widgetInventory SET onhand = ( onhand - 5 ) WHERE poop = 5;
+COMMIT;
+```
+
+Here's the output:
+```
+mysql> START TRANSACTION;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> INSERT INTO widgetSales ( inv_id, quan, price ) VALUES ( 5, 5, 500 );
+Query OK, 1 row affected (0.00 sec)
+
+mysql> UPDATE widgetInventory SET onhand = ( onhand - 5 ) WHERE poop = 5;
+ERROR 1054 (42S22): Unknown column 'poop' in 'where clause'
+mysql> COMMIT;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> select * from widgetSales;
++----+--------+------+-------+
+| id | inv_id | quan | price |
++----+--------+------+-------+
+|  1 |      1 |    5 |   500 |
+|  2 |      5 |    5 |   500 |
+|  3 |      5 |    5 |   500 |
++----+--------+------+-------+
+3 rows in set (0.00 sec)
+```
+
+A: Nothing. SQL doesn't care if your statements succeed or fail. You either `COMMIT` or `ROLLBACK` on your own.
+
+SO! Sql will commit it or roll it back, as you specify. But it's up to you to notice when you should call each thing.
+
+HOMEWORK: Is there a rollback-if-error?
+
+
+## Performance—
+
+Q: the claim is that a transaction is more performant. But from what we saw, it
+seems that the DB is doing exactly what you want every step of the way and then
+somehow committing it all at the end. How does that increase performance? Isn't
+it the case that the DB has to do all the work all the time?
+
+Okay, so here is some SQL that takes some time to execute (from the video):
+
+```sql
+-- 03 Performance 
+
+USE scratch;
+DROP TABLE IF EXISTS test;
+DROP PROCEDURE IF EXISTS insert_loop;
+CREATE TABLE test ( id INTEGER AUTO_INCREMENT PRIMARY KEY, data TEXT );
+
+DELIMITER //
+CREATE PROCEDURE insert_loop( IN count INT UNSIGNED )
+BEGIN
+    DECLARE accum INT UNSIGNED DEFAULT 0;
+    DECLARE start_time VARCHAR(32);
+    DECLARE end_time VARCHAR(32);
+    SET start_time = SYSDATE(6);
+    WHILE accum < count DO
+        SET accum = accum + 1;
+        INSERT INTO test ( data ) VALUES ( 'this is a good sized line of text.' );
+    END WHILE;
+    SET end_time = SYSDATE(6);
+    SELECT TIME_FORMAT(start_time, '%T.%f') AS `Start`,
+        TIME_FORMAT(end_time, '%T.%f') AS `End`,
+        TIME_FORMAT(TIMEDIFF(end_time, start_time), '%s.%f') AS `Elapsed Secs`;
+END //
+DELIMITER ;
+
+START TRANSACTION;
+CALL insert_loop(10000);
+START TRANSACTION;
+
+SELECT * FROM test ORDER BY id DESC LIMIT 10;
+
+DROP TABLE IF EXISTS test;
+DROP PROCEDURE IF EXISTS insert_loop;
+```
+
+Sure enough, if you don't have the transaction, it takes like 10x longer than if you do! 😳
+
+Bill says that this speed is attributed to it using its "buffer" for these calls
+rather than making individual calls. What is the MYSQL buffer?
+
+
+# Triggers
+
+What is a trigger?
+
+it's like a callback. Some SQL that gets executed on every row insert? (is it ONLY row inserts?)
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS widgetCustomer;
+DROP TABLE IF EXISTS widgetSale;
+
+CREATE TABLE widgetCustomer ( id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64), last_order_id INT );
+CREATE TABLE widgetSale ( id INTEGER AUTO_INCREMENT PRIMARY KEY, item_id INT, customer_id INT, quan INT, price INT );
+
+INSERT INTO widgetCustomer (name) VALUES ('Bob');
+INSERT INTO widgetCustomer (name) VALUES ('Sally');
+INSERT INTO widgetCustomer (name) VALUES ('Fred');
+
+SELECT * FROM widgetCustomer;
+
+DROP TRIGGER IF EXISTS newWidgetSale;
+DELIMITER //
+CREATE TRIGGER newWidgetSale AFTER INSERT ON widgetSale 
+    FOR EACH ROW
+    BEGIN
+         UPDATE widgetCustomer SET last_order_id = NEW.id WHERE widgetCustomer.id = NEW.customer_id;
+    END //
+DELIMITER ;
+
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (1, 3, 5, 1995);
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (2, 2, 3, 1495);
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (3, 1, 1, 2995);
+SELECT * FROM widgetSale;
+SELECT * FROM widgetCustomer;
+
+```
+
+What else can we make a trigger for? can we do BEFORE INSERT ON? or BEFORE UPDATE ON? or BEFORE DELETE ON?
+
+```sql
+DROP TRIGGER IF EXISTS deleteCustomer;
+DELIMITER //
+CREATE TRIGGER deleteCustomer BEFORE DELETE ON widgetCustomer 
+    FOR EACH ROW
+    BEGIN
+         DELETE FROM widgetSale WHERE widgetSale.customer_id = OLD.id;
+    END //
+DELIMITER ;
+
+DELETE FROM widgetCustomer WHERE name="Sally";
+SELECT * FROM widgetSale;
+SELECT * FROM widgetCustomer;
+```
+
+How about update?
+
+
+> SIDE QUESTION: what's the difference between INT and INTEGER in the table def?
+
+answer: it don't care. it's the same thing.
+
+```sql
+CREATE TABLE deadName (id INTEGER AUTO_INCREMENT PRIMARY KEY, old_name VARCHAR(64), new_name VARCHAR(64), customer_id INT);
+
+DROP TRIGGER IF EXISTS keepTrackOfCustomerRenames;
+DELIMITER //
+CREATE TRIGGER keepTrackOfCustomerRenames BEFORE UPDATE ON widgetCustomer 
+    FOR EACH ROW
+    BEGIN
+         INSERT INTO deadName (old_name, new_name, customer_id) VALUES (OLD.name, NEW.name, NEW.id);
+    END //
+DELIMITER ;
+
+UPDATE widgetCustomer SET name = 'Robert' where name = "Bob";
+SELECT * FROM widgetCustomer;
+SELECT * FROM deadName;
+```
+
+## Preventing an update
+
+Note the extremely esoteric call to abort the stuff:
+
+`SIGNAL SQLSTATE '45000' set message_text = 'cannot update reconciled row: "widgetSale"';`
+
+Bill says that this can't be used to roll a transaction back. Let's see what happens if we try:
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS widgetCustomer;
+DROP TABLE IF EXISTS widgetSale;
+
+CREATE TABLE widgetCustomer ( id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64), last_order_id INT );
+CREATE TABLE widgetSale ( id INTEGER AUTO_INCREMENT PRIMARY KEY, item_id INT, customer_id INTEGER, quan INT, price INT,
+    reconciled INT );
+INSERT INTO widgetSale (item_id, customer_id, quan, price, reconciled) VALUES (1, 3, 5, 1995, 0);
+INSERT INTO widgetSale (item_id, customer_id, quan, price, reconciled) VALUES (2, 2, 3, 1495, 1);
+INSERT INTO widgetSale (item_id, customer_id, quan, price, reconciled) VALUES (3, 1, 1, 2995, 0);
+SELECT * FROM widgetSale;
+
+DROP TRIGGER IF EXISTS updateWidgetSale;
+DELIMITER //
+CREATE TRIGGER updateWidgetSale BEFORE UPDATE ON widgetSale
+    FOR EACH ROW
+    BEGIN
+        IF OLD.id = NEW.id AND OLD.reconciled = 1 THEN
+            SIGNAL SQLSTATE '45000' set message_text = 'cannot update reconciled row: "widgetSale"';
+        END IF;
+    END //
+DELIMITER ;
+
+START TRANSACTION;
+UPDATE widgetSale SET quan = 9 WHERE id = 1;
+UPDATE widgetSale SET quan = 9 WHERE id = 2;
+COMMIT;
+
+SELECT * FROM widgetSale;
+```
+
+so, in this case, it did throw an error to the screen, and made a little beeping
+sound. But it went right ahead and commit the change but only to id 1 (not id
+2).
+
+```sql
+mysql> START TRANSACTION;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> UPDATE widgetSale SET quan = 9 WHERE id = 1;
+Query OK, 1 row affected (0.00 sec)
+Rows matched: 1  Changed: 1  Warnings: 0
+
+mysql> UPDATE widgetSale SET quan = 9 WHERE id = 2;
+ERROR 1644 (45000): cannot update reconciled row: "widgetSale"
+mysql> COMMIT;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql>
+mysql> SELECT * FROM widgetSale;
++----+---------+-------------+------+-------+------------+
+| id | item_id | customer_id | quan | price | reconciled |
++----+---------+-------------+------+-------+------------+
+|  1 |       1 |           3 |    9 |  1995 |          0 |
+|  2 |       2 |           2 |    3 |  1495 |          1 |
+|  3 |       3 |           1 |    1 |  2995 |          0 |
++----+---------+-------------+------+-------+------------+
+```
+
+HOMEWORK: Is there a rollback-if-error?
+
+Apparently we can set an exception handler like this:
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS widgetCustomer;
+DROP TABLE IF EXISTS widgetSale;
+
+CREATE TABLE widgetCustomer ( id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64), last_order_id INT );
+CREATE TABLE widgetSale ( id INTEGER AUTO_INCREMENT PRIMARY KEY, item_id INT, customer_id INTEGER, quan INT, price INT,
+    reconciled INT );
+INSERT INTO widgetSale (item_id, customer_id, quan, price, reconciled) VALUES (1, 3, 5, 1995, 0);
+INSERT INTO widgetSale (item_id, customer_id, quan, price, reconciled) VALUES (2, 2, 3, 1495, 1);
+INSERT INTO widgetSale (item_id, customer_id, quan, price, reconciled) VALUES (3, 1, 1, 2995, 0);
+SELECT * FROM widgetSale;
+
+DROP TRIGGER IF EXISTS updateWidgetSale;
+DELIMITER //
+CREATE TRIGGER updateWidgetSale BEFORE UPDATE ON widgetSale
+    FOR EACH ROW
+    BEGIN
+        IF OLD.id = NEW.id AND OLD.reconciled = 1 THEN
+            SIGNAL SQLSTATE '45000' set message_text = 'cannot update reconciled row: "widgetSale"';
+        END IF;
+    END //
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_fail;
+DELIMITER $$
+CREATE PROCEDURE `sp_fail`()
+BEGIN
+  DECLARE `_rollback` BOOL DEFAULT 0;
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET `_rollback` = 1;
+  START TRANSACTION;
+  UPDATE widgetSale SET quan = 9 WHERE id = 1;
+  UPDATE widgetSale SET quan = 9 WHERE id = 2;
+  IF `_rollback` THEN
+      ROLLBACK;
+  ELSE
+      COMMIT;
+  END IF;
+END$$
+DELIMITER ;
+
+CALL sp_fail();
+SELECT * FROM widgetSale;
+```
 
