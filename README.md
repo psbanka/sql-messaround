@@ -1337,3 +1337,102 @@ CALL sp_fail();
 SELECT * FROM widgetSale;
 ```
 
+## Example: timestamp triggers!
+
+Here's something we wanted to know: do we need a transaction around this stuff? Like, if the second trigger has two
+things that happen (two inserts, say). And the first insert fails, then do we need to ROLLBACK ? 
+
+We engineered a little test to see!
+
+```sql
+USE scratch;
+DROP TABLE IF EXISTS widgetSale;
+DROP TABLE IF EXISTS widgetCustomer;
+DROP TABLE IF EXISTS widgetLog;
+
+CREATE TABLE widgetCustomer ( id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64), last_order_id INT, stamp VARCHAR(24) );
+CREATE TABLE widgetSale ( id INTEGER AUTO_INCREMENT PRIMARY KEY, item_id INT, customer_id INTEGER, quan INT, price INT, stamp VARCHAR(24));
+CREATE TABLE widgetLog ( id INTEGER AUTO_INCREMENT PRIMARY KEY, stamp VARCHAR(24) NOT NULL, event VARCHAR(64), username VARCHAR(64), tablename VARCHAR(64), table_id INT);
+
+INSERT INTO widgetCustomer (name) VALUES ('Bob');
+INSERT INTO widgetCustomer (name) VALUES ('Sally');
+INSERT INTO widgetCustomer (name) VALUES ('Fred');
+SELECT * FROM widgetCustomer;
+
+DROP TRIGGER IF EXISTS stampSale;
+DROP TRIGGER IF EXISTS newWidgetSale;
+DELIMITER //
+CREATE TRIGGER stampSale BEFORE INSERT ON widgetSale
+    FOR EACH ROW
+    BEGIN
+        DECLARE nowstamp VARCHAR(24) DEFAULT NOW();
+        IF NEW.customer_id > 2 THEN
+           SET NEW.stamp = NULL;
+        ELSE
+            SET NEW.stamp = nowstamp;
+        END IF;
+    END //
+
+CREATE TRIGGER newWidgetSale AFTER INSERT ON widgetSale 
+    FOR EACH ROW
+    BEGIN
+        INSERT INTO widgetLog (stamp, event, username, tablename, table_id)
+            VALUES (NEW.stamp, 'INSERT', USER(), 'widgetSale', NEW.id);
+        UPDATE widgetCustomer SET last_order_id = NEW.id, stamp = NEW.stamp
+             WHERE widgetCustomer.id = NEW.customer_id;
+    END //
+DELIMITER ;
+
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (1, 3, 5, 1995);
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (2, 2, 3, 1495);
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (3, 1, 1, 2995);
+
+SELECT * FROM widgetSale;
+SELECT * FROM widgetCustomer;
+SELECT * FROM widgetLog;
+```
+
+The output of this thing (limiting to the INSERT and SELECT statements) is:
+
+```sql
+mysql> INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (1, 3, 5, 1995);
+ERROR 1048 (23000): Column 'stamp' cannot be null
+mysql> INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (2, 2, 3, 1495);
+Query OK, 1 row affected (0.01 sec)
+
+mysql> INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (3, 1, 1, 2995);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> SELECT * FROM widgetSale;
++----+---------+-------------+------+-------+---------------------+
+| id | item_id | customer_id | quan | price | stamp               |
++----+---------+-------------+------+-------+---------------------+
+|  2 |       2 |           2 |    3 |  1495 | 2022-06-03 10:42:13 |
+|  3 |       3 |           1 |    1 |  2995 | 2022-06-03 10:42:14 |
++----+---------+-------------+------+-------+---------------------+
+2 rows in set (0.00 sec)
+
+mysql> SELECT * FROM widgetCustomer;
++----+-------+---------------+---------------------+
+| id | name  | last_order_id | stamp               |
++----+-------+---------------+---------------------+
+|  1 | Bob   |             3 | 2022-06-03 10:42:14 |
+|  2 | Sally |             2 | 2022-06-03 10:42:13 |
+|  3 | Fred  |          NULL | NULL                |
++----+-------+---------------+---------------------+
+3 rows in set (0.00 sec)
+
+mysql> SELECT * FROM widgetLog;
++----+---------------------+--------+----------------+------------+----------+
+| id | stamp               | event  | username       | tablename  | table_id |
++----+---------------------+--------+----------------+------------+----------+
+|  1 | 2022-06-03 10:42:13 | INSERT | root@localhost | widgetSale |        2 |
+|  2 | 2022-06-03 10:42:14 | INSERT | root@localhost | widgetSale |        3 |
++----+---------------------+--------+----------------+------------+----------+
+2 rows in set (0.00 sec)
+
+```
+
+SO YOU CAN SEE! that the failed insert (first one) DID NOT result in an entry in
+widgetSale. That means that the entire INSERT operation got "rolled back" and we
+did not have to do anything ourselves.
