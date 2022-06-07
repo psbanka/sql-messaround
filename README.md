@@ -1436,3 +1436,83 @@ mysql> SELECT * FROM widgetLog;
 SO YOU CAN SEE! that the failed insert (first one) DID NOT result in an entry in
 widgetSale. That means that the entire INSERT operation got "rolled back" and we
 did not have to do anything ourselves.
+
+
+# Foreign key constraints
+
+```sql
+
+USE scratch;
+DROP TABLE IF EXISTS widgetSale;
+DROP TABLE IF EXISTS widgetCustomer;
+
+CREATE TABLE widgetCustomer ( id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64) );
+CREATE TABLE widgetSale ( 
+    id INTEGER AUTO_INCREMENT PRIMARY KEY, 
+    item_id INT, 
+    customer_id INT,
+    quan INT,
+    price INT,
+    INDEX custid (customer_id),
+    CONSTRAINT custid FOREIGN KEY custid(customer_id) REFERENCES widgetCustomer(id)
+        ON UPDATE RESTRICT
+        ON DELETE SET NULL
+);
+
+INSERT INTO widgetCustomer (name) VALUES ('Bob'), ('Sally'), ('Fred'), ('Squee');
+INSERT INTO widgetSale (item_id, customer_id, quan, price) VALUES (1, 3, 5, 1995), (2, 2, 3, 1495), (3, 1, 1, 2995);
+SELECT * FROM widgetSale;
+SELECT * FROM widgetCustomer;
+
+update widgetCustomer set id = 5 where id = 4;
+UPDATE widgetCustomer SET id = 9 WHERE id = 2;
+```
+
+The values that you can constrain to are RESTRICT, CASCADE and SET NULL:
+
+- RESTRICT means that mysql will NOT allow changes to that value on the parent
+  table at all (will throw an error) unless there is NO ENTRY on the child table
+  (example is changing the id of "Squee" above. mysql is okay with that because
+  there is no sale entry for that customer.
+
+- CASCADE will propagate changes from the parent table into the child table.
+  Therefore changing Sally's customer ID in the widgetCustomer table ALSO changes
+  it in the widgetSale table.
+
+- SET NULL will null-out the entry in the child table if the parent table gets
+  fucked with.
+
+Also note that in line 1456, that index would have been created for us anyway
+because in order to form this constraint it needs to do a lookup on that
+constraint.
+
+NOTE that we named the foreign key constraint because you can then fiddle with it. If not, 
+then you have to do something like this:
+
+```sql
+SELECT * FROM information_schema.TABLE_CONSTRAINTS 
+WHERE information_schema.TABLE_CONSTRAINTS.CONSTRAINT_TYPE = 'FOREIGN KEY' 
+AND information_schema.TABLE_CONSTRAINTS.TABLE_NAME = 'widgetSale';
+```
+
+and you get this:
+
+```sql
+mysql> SELECT * FROM information_schema.TABLE_CONSTRAINTS
+    -> WHERE information_schema.TABLE_CONSTRAINTS.CONSTRAINT_TYPE = 'FOREIGN KEY'
+    -> AND information_schema.TABLE_CONSTRAINTS.TABLE_NAME = 'widgetSale';
++--------------------+-------------------+-------------------+--------------+------------+-----------------+----------+
+| CONSTRAINT_CATALOG | CONSTRAINT_SCHEMA | CONSTRAINT_NAME   | TABLE_SCHEMA | TABLE_NAME | CONSTRAINT_TYPE | ENFORCED |
++--------------------+-------------------+-------------------+--------------+------------+-----------------+----------+
+| def                | scratch           | widgetsale_ibfk_1 | scratch      | widgetSale | FOREIGN KEY     | YES      |
++--------------------+-------------------+-------------------+--------------+------------+-----------------+----------+
+1 row in set (0.00 sec)
+```
+
+Then if you want to get rid of the foreign key, you would do this:
+
+```sql
+mysql> ALTER TABLE widgetSale DROP FOREIGN KEY widgetsale_ibfk_1;
+Query OK, 0 rows affected (0.01 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+```
